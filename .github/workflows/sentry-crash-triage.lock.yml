@@ -181,6 +181,32 @@ jobs:
             setupGlobals(core, github, context, exec, io, getOctokit);
             const { main } = require('${{ runner.temp }}/gh-aw/actions/check_version_updates.cjs');
             await main();
+      - name: Inject issue data for workflow_dispatch
+        if: github.event_name == 'workflow_dispatch'
+        id: inject-issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+        with:
+          github-token: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN }}
+          script: |
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER);
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+            });
+            core.setOutput('title', issue.title);
+            core.setOutput('body', issue.body);
+            const fs = require('fs');
+            const syntheticEvent = {
+              action: 'opened',
+              issue: issue,
+              repository: context.payload.repository,
+              sender: context.payload.sender,
+            };
+            fs.writeFileSync(process.env.GITHUB_EVENT_PATH, JSON.stringify(syntheticEvent));
+            core.info(`Injected issue #${issueNumber}: ${issue.title}`);
       - name: Compute current body text
         id: sanitized
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -192,6 +218,24 @@ jobs:
             setupGlobals(core, github, context, exec, io, getOctokit);
             const { main } = require('${{ runner.temp }}/gh-aw/actions/compute_text.cjs');
             await main();
+      - name: Write issue content to prompt file
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          GH_AW_ISSUE_TITLE: ${{ steps.inject-issue.outputs.title || steps.sanitized.outputs.title }}
+          GH_AW_ISSUE_BODY: ${{ steps.inject-issue.outputs.body || steps.sanitized.outputs.body }}
+        with:
+          script: |
+            const fs = require('fs');
+            const title = process.env.GH_AW_ISSUE_TITLE || '';
+            const body = process.env.GH_AW_ISSUE_BODY || '';
+            if (body) {
+              fs.mkdirSync('/tmp/gh-aw/aw-prompts', { recursive: true });
+              const content = title ? `**Title:** ${title}\n\n${body}` : body;
+              fs.writeFileSync('/tmp/gh-aw/aw-prompts/issue-body.txt', content);
+              core.info(`Issue content written (${content.length} chars)`);
+            } else {
+              core.warning('No issue body found in sanitized outputs — agent will need to fetch it via MCP');
+            }
       - name: Create prompt with built-in context
         env:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
@@ -261,6 +305,17 @@ jobs:
           cat "${RUNNER_TEMP}/gh-aw/prompts/github_mcp_tools_with_safeoutputs_prompt.md"
           cat << 'GH_AW_PROMPT_e5b989db3b52fcf1_EOF'
           </system>
+          GH_AW_PROMPT_e5b989db3b52fcf1_EOF
+          if [ -f /tmp/gh-aw/aw-prompts/issue-body.txt ]; then
+          cat << 'GH_AW_PROMPT_e5b989db3b52fcf1_EOF'
+          <issue>
+          GH_AW_PROMPT_e5b989db3b52fcf1_EOF
+          cat /tmp/gh-aw/aw-prompts/issue-body.txt
+          cat << 'GH_AW_PROMPT_e5b989db3b52fcf1_EOF'
+          </issue>
+          GH_AW_PROMPT_e5b989db3b52fcf1_EOF
+          fi
+          cat << 'GH_AW_PROMPT_e5b989db3b52fcf1_EOF'
           {{#runtime-import .github/workflows/sentry-crash-triage.md}}
           GH_AW_PROMPT_e5b989db3b52fcf1_EOF
           } > "$GH_AW_PROMPT"
