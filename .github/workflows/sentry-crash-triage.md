@@ -474,6 +474,23 @@ git revert {commit_hash}
 **Recommendation:** {Fix forward — explain why} OR {Rollback — explain why}
 ````
 
+### Safe output call format
+
+When calling `create_pull_request` as a safe output, **always include** a `temporary_id`:
+
+```json
+{
+  "type": "create_pull_request",
+  "temporary_id": "aw_sentry_pr",
+  "title": "...",
+  "body": "...",
+  "branch": "fix/sentry-<slug>-${{ github.run_id }}",
+  "draft": true
+}
+```
+
+The `temporary_id: "aw_sentry_pr"` value allows Step 12 to reference this PR in subsequent `add_labels` and `add_reviewer` calls without needing to know the PR number at agent runtime.
+
 The `Closes #${{ github.event.issue.number }}` line ensures the triggering
 GitHub issue is auto-closed when the PR is merged.
 
@@ -495,35 +512,54 @@ approve, and merge.
 After the PR is created, do the following. This is an autonomous CI run —
 do not pause, do not ask for confirmation, and do not skip this step.
 
-### 12a — Determine team reviewer from CODEOWNERS
+### 12a — Use temporary_id to link PR operations
 
-Read `.github/CODEOWNERS` in full.
+When calling `create_pull_request` in Step 11, **always set**:
+```json
+{
+  "type": "create_pull_request",
+  "temporary_id": "aw_sentry_pr",
+  "title": "...",
+  "body": "...",
+  "branch": "..."
+}
+```
 
-For each file you modified in the fix, scan CODEOWNERS from top to bottom
-and find the **last** matching rule. CODEOWNERS uses last-match-wins
-precedence — the last rule whose path pattern is a prefix of the modified
-file path is the one that applies.
+The `temporary_id` field registers a linkage from `"aw_sentry_pr"` to the actual PR number created by the safe_outputs framework. This allows subsequent operations to reference the PR without knowing its number at agent runtime.
 
-Extract the team slug from the matching line by stripping the `@org/` prefix.
-Use only the part after the last `/`.
+### 12b — Add the sentry-triage-agent label using temporary_id
 
-For this repository, all paths will match the catch-all rule and resolve to
-the team slug `ops-team`.
+Call `add_labels` with `temporary_id` reference:
+```json
+{
+  "type": "add_labels",
+  "item_number": "aw_sentry_pr",
+  "labels": ["sentry-triage-agent"]
+}
+```
 
-### 12b — Add the sentry-triage-agent label
+**Critical:** Always use `item_number: "aw_sentry_pr"` — never hardcode a PR number. The framework will resolve the temporary ID to the actual created PR number.
 
-Call `add_labels` with `["sentry-triage-agent"]` targeting the PR created
-in Step 11. Always add this label regardless of which files were modified.
+### 12c — Request team reviewer using temporary_id
 
-### 12c — Request team reviewer
+Call `add_reviewer` with the temporary ID:
+```json
+{
+  "type": "add_reviewer",
+  "pull_request_number": "aw_sentry_pr",
+  "team_reviewers": ["ops-team"]
+}
+```
 
-Call `add_reviewer` with the team slug determined in Step 12a using the
-`team_reviewers` field. Do not use the `reviewers` (individual user) field.
+**Critical:** Always use `pull_request_number: "aw_sentry_pr"` — never hardcode a PR number.
 
+For this repository the team reviewer will always be `ops-team`.
 
-Rules:
-- Never skip reviewer assignment under any circumstance.
-- Never mark the PR as ready for review — always keep it as a draft.
-- Team slug must be passed exactly as-is — do not prefix with `@` or org name.
+### Rules
+- **Always use temporary_id linking** — the framework resolves it to the real PR number automatically
+- Never hardcode a PR number in `add_labels` or `add_reviewer` calls
+- Never skip reviewer assignment under any circumstance
+- Never mark the PR as ready for review — always keep it as a draft
+- Team slug must be passed exactly as-is — do not prefix with `@` or org name
 - `sentry-triage-agent` label must always be added.
 
