@@ -2,10 +2,17 @@
 on:
   issues:
     types: [opened]
-
-bots:
-  - sentry-io[bot]
-  - sentry[bot]
+  workflow_dispatch:
+    inputs:
+      aw_context:
+        default: ""
+        description: "Agent caller context (used internally by Agentic Workflows)."
+        required: false
+        type: string
+      issue_number:
+        description: "GitHub issue number to triage"
+        required: true
+        type: string
 
 engine: copilot
 
@@ -21,8 +28,9 @@ safe-outputs:
     allowed:
       - sentry-triage-agent
   add-reviewer:
-    reviewers:
-      - ramyan-hf
+    max: 3
+    team-reviewers:
+      - ops-team
 ---
 
 # Sentry Crash Auto-Triage
@@ -33,6 +41,23 @@ fix action, apply a minimal targeted fix when needed, and open a draft Pull
 Request** for human review.
 
 **You must never auto-merge. You must never open a new GitHub Issue as output.**
+
+---
+
+## Issue Injection
+
+When the workflow is triggered via `workflow_dispatch` (manual invocation),
+the issue body must be fetched and injected into the agent context.
+
+Read the GitHub issue specified in the `issue_number` input parameter:
+
+```bash
+gh issue view "${{ inputs.issue_number }}" --json body --jq '.body'
+```
+
+Inject the issue body into the agent context as `issue_body`. This allows
+Step 0 and subsequent steps to access `${{ env.issue_body }}` as if the
+issue were provided by the triggering webhook payload.
 
 ---
 
@@ -467,12 +492,38 @@ approve, and merge.
 
 ## Step 12 — Apply PR Label and Assign Reviewer
 
-After the PR is created, load and follow the reviewer assignment skill.
+After the PR is created, do the following. This is an autonomous CI run —
+do not pause, do not ask for confirmation, and do not skip this step.
 
-1. Read `.github/skills/reviewer-assignment.md` in full. This is an
-   autonomous CI run — do not pause, do not ask for confirmation, and
-   do not wait for input. Execute all steps in it immediately.
+### 12a — Determine team reviewer from CODEOWNERS
 
-2. You already know which files you modified to produce the fix. Use
-   that list directly — do not re-scan the repo.
+Read `.github/CODEOWNERS` in full.
+
+For each file you modified in the fix, scan CODEOWNERS from top to bottom
+and find the **last** matching rule. CODEOWNERS uses last-match-wins
+precedence — the last rule whose path pattern is a prefix of the modified
+file path is the one that applies.
+
+Extract the team slug from the matching line by stripping the `@org/` prefix.
+Use only the part after the last `/`.
+
+For this repository, all paths will match the catch-all rule and resolve to
+the team slug `ops-team`.
+
+### 12b — Add the sentry-triage-agent label
+
+Call `add_labels` with `["sentry-triage-agent"]` targeting the PR created
+in Step 11. Always add this label regardless of which files were modified.
+
+### 12c — Request team reviewer
+
+Call `add_reviewer` with the team slug determined in Step 12a using the
+`team_reviewers` field. Do not use the `reviewers` (individual user) field.
+
+
+Rules:
+- Never skip reviewer assignment under any circumstance.
+- Never mark the PR as ready for review — always keep it as a draft.
+- Team slug must be passed exactly as-is — do not prefix with `@` or org name.
+- `sentry-triage-agent` label must always be added.
 

@@ -1,0 +1,11 @@
+# CODEOWNERS
+# Defines code ownership for this repository.
+#
+# Bot-raised fix PRs from the sentry-triage-agent workflow read this file
+# directly to determine reviewer assignment, since CODEOWNERS auto-assignment
+# does not trigger on draft PRs.
+#
+# The catch-all rule below assigns the ops-team to all PRs.
+# Last-match-wins: specific rules added below the catch-all will override it.
+
+* @Ramya-Org-sample/ops-team
