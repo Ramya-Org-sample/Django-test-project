@@ -494,6 +494,8 @@ The `temporary_id: "aw_sentry_pr"` value allows Step 12 to reference this PR in 
 The `Closes #${{ github.event.issue.number }}` line ensures the triggering
 GitHub issue is auto-closed when the PR is merged.
 
+You must call create_pull_request exactly once in the entire workflow run. Do not retry it. The safe outputs framework enforces a max of 1. If you have already emitted a create_pull_request call, skip any subsequent attempt and proceed directly to Step 12.
+
 ### Reviewer assignment
 
 Always request review from the GitHub team **`ramya-co/ops-team`**.
