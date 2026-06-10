@@ -133,7 +133,7 @@ def export_tasks_csv(request):
     response['Content-Disposition'] = 'attachment; filename="tasks.csv"'
     writer = csv.writer(response)
     writer.writerow(['ID', 'Title', 'Completed', 'Created At'])
-    export_format = request.GET['format'].lower()
+    export_format = request.GET.dict()['format'].lower()
     if export_format != 'csv':
         response['Content-Disposition'] = f'attachment; filename="tasks.{export_format}"'
     # REGRESSION: ZeroDivisionError when task list is empty (total == 0)
