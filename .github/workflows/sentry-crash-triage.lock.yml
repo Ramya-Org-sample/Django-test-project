@@ -188,7 +188,7 @@ jobs:
         env:
           ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
         with:
-          github-token: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN }}
+          github-token: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN || secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const issueNumber = parseInt(process.env.ISSUE_NUMBER);
             const { data: issue } = await github.rest.issues.get({
